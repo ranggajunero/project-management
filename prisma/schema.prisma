@@ -1,0 +1,97 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  user_id        Int              @id @default(autoincrement())
+  name           String
+  email          String           @unique
+  password       String
+  role           String // admin, manager, worker, client
+  division       String? // analyst, uiux, programmer, qa (nullable untuk non-worker)
+  
+  // Relasi
+  managed_projects Project[]      @relation("ManagerProjects")
+  client_projects  Project[]      @relation("ClientProjects")
+  project_members  ProjectMember[]
+  tasks            Task[]
+  approvals        Approval[]
+
+  @@map("users")
+}
+
+model Project {
+  project_id   Int             @id @default(autoincrement())
+  client_id    Int
+  manager_id   Int?
+  project_name String
+  description  String?         @db.Text
+  status       String          @default("pending")
+  start_date   DateTime?
+  end_date     DateTime?
+
+  // Relasi
+  client       User            @relation("ClientProjects", fields: [client_id], references: [user_id])
+  manager      User?            @relation("ManagerProjects", fields: [manager_id], references: [user_id])
+  
+  // Relasi
+  members      ProjectMember[]
+  tasks        Task[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  member_id  Int     @id @default(autoincrement())
+  project_id Int
+  user_id    Int
+
+  // Relasi
+  project    Project @relation(fields: [project_id], references: [project_id], onDelete: Cascade)
+  user       User    @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@map("project_members")
+}
+
+model Task {
+  task_id        Int        @id @default(autoincrement())
+  project_id     Int
+  worker_id      Int
+  task_name      String
+  description    String?    @db.Text
+  status         String     @default("todo") // todo, progress, review, revision, done
+  deadline       DateTime?
+  sequence_order Int        @default(0)
+
+  // Relasi
+  project        Project    @relation(fields: [project_id], references: [project_id], onDelete: Cascade)
+  worker         User       @relation(fields: [worker_id], references: [user_id])
+  approvals      Approval[]
+
+  @@map("tasks")
+}
+
+model Approval {
+  approval_id     Int      @id @default(autoincrement())
+  task_id         Int
+  approved_by     Int
+  approval_status String // approved, rejected
+  note            String?  @db.Text
+  approval_date   DateTime @default(now())
+
+  // Relasi
+  task            Task     @relation(fields: [task_id], references: [task_id], onDelete: Cascade)
+  approver        User     @relation(fields: [approved_by], references: [user_id])
+
+  @@map("approvals")
+}

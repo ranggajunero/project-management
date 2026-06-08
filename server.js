@@ -1,0 +1,447 @@
+const express = require('express');
+const cors = require('cors');
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
+
+const app = express();
+const prisma = new PrismaClient();
+
+app.use(cors());
+app.use(express.json());
+
+app.post('/api/register', async (req, res) => {
+  try {
+    const { name, email, password, role, division } = req.body;
+    
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Simpan ke database menggunakan Prisma
+    const newUser = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        role,
+        division
+      }
+    });
+    
+    res.status(201).json({ message: "User berhasil dibuat!", user: { id: newUser.user_id, email: newUser.email } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    // Cari user berdasarkan email lewat Prisma
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+    
+    if (!user) return res.status(404).json({ message: "User tidak ditemukan!" });
+    
+    // Cek Password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ message: "Password salah!" });
+    
+    // Buat JWT Token
+    const token = jwt.sign(
+      { user_id: user.user_id, role: user.role, division: user.division },
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+    
+    res.json({
+      message: "Login berhasil!",
+      token,
+      user: {
+        id: user.user_id,
+        name: user.name,
+        role: user.role,
+        division: user.division
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// jwt middleware untuk proteksi endpoint dan ambil data user dari token
+const authenticateToken = (req, res, next) => {
+  // Ambil token dari header 'Authorization'
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Format: "Bearer <token>"
+
+  if (!token) return res.status(401).json({ message: "Akses ditolak! Token tidak ditemukan." });
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ message: "Token tidak valid atau sudah kedaluwarsa!" });
+    
+    // Simpan data user dari token ke dalam req.user agar bisa dipakai di endpoint
+    req.user = user; 
+    next(); 
+  });
+};
+
+// ambil data usres untuk panel admin
+app.get('/api/users', authenticateToken, async (req, res) => {
+  try {
+    // Tarik semua data user dari database, tapi password nggak usah ikut ditarik biar aman
+    const users = await prisma.user.findMany({
+      select: {
+        user_id: true,
+        name: true,
+        email: true,
+        role: true,
+        division: true
+      },
+      orderBy: {
+        user_id: 'desc' // Urutkan dari yang paling baru dibuat
+      }
+    });
+
+    res.json({ users });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ message: 'Gagal menarik data pengguna' });
+  }
+});
+
+// UPDATE USER (KHUSUS ADMIN)
+app.patch('/api/users/:id', authenticateToken, async (req, res) => {
+  try {
+    // Validasi: Hanya Admin yang boleh edit akun orang lain
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak! Hanya Admin yang bisa mengubah data." });
+    }
+
+    const userId = parseInt(req.params.id);
+    const { name, email, password, role, division } = req.body;
+
+    // Siapkan data yang mau di-update
+    let updateData = {
+      name,
+      email,
+      role,
+      division: role === 'worker' ? division : null // Reset divisi kalau bukan worker
+    };
+
+    // JIKA ADMIN MENGISI PASSWORD BARU, KITA ENKRIPSI!
+    // Kalau dikosongin, berarti password lamanya tetap aman.
+    if (password && password.trim() !== '') {
+      const bcrypt = require('bcrypt'); // pastikan bcrypt terdeteksi
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+
+    // Update ke database
+    await prisma.user.update({
+      where: { user_id: userId },
+      data: updateData
+    });
+
+    res.json({ message: "Data pengguna berhasil diperbarui!" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Gagal memperbarui data pengguna." });
+  }
+});
+
+// HAPUS USER (KHUSUS ADMIN)
+app.delete('/api/users/:id', authenticateToken, async (req, res) => {
+  try {
+    // Validasi: Hanya Admin yang boleh hapus
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak! Hanya Admin yang bisa menghapus data." });
+    }
+
+    const userId = parseInt(req.params.id);
+
+    // Keamanan ekstra: Cegah admin menghapus akunnya sendiri saat sedang login
+    if (userId === req.user.user_id) {
+      return res.status(400).json({ message: "Anda tidak bisa menghapus akun Anda sendiri saat sedang login!" });
+    }
+
+    // Eksekusi hapus di database
+    await prisma.user.delete({
+      where: { user_id: userId }
+    });
+
+    res.json({ message: "Akun pengguna berhasil dihapus secara permanen!" });
+  } catch (error) {
+    console.error(error);
+    // Kalau error karena user ini masih punya project/task (Foreign Key Constraint)
+    res.status(500).json({ message: "Gagal menghapus akun. Pastikan user ini tidak sedang terikat dengan tugas atau proyek aktif!" });
+  }
+});
+
+// create project
+app.post('/api/projects', authenticateToken, async (req, res) => {
+  try {
+    // Validasi: Hanya Manager (atau Admin) yang boleh bikin project
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak! Hanya Manager yang bisa membuat project." });
+    }
+
+    const { client_id, project_name, description, start_date, end_date } = req.body;
+    
+    // manager_id diambil otomatis dari siapa yang sedang login (lewat token)
+    const manager_id = req.user.user_id;
+
+    // Simpan ke database
+    const newProject = await prisma.project.create({
+      data: {
+        client_id: parseInt(client_id), 
+        manager_id: manager_id,
+        project_name,
+        description,
+        // Konversi string tanggal ke format DateTime Prisma (jika ada)
+        start_date: start_date ? new Date(start_date) : null,
+        end_date: end_date ? new Date(end_date) : null,
+      }
+    });
+
+    res.status(201).json({ message: "Project berhasil dibuat!", project: newProject });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// liat list project
+app.get('/api/projects', authenticateToken, async (req, res) => {
+  try {
+    const projects = await prisma.project.findMany({
+      include: {
+        client: {
+          select: { name: true, email: true } // Ambil nama & email client
+        },
+        manager: {
+          select: { name: true } // Ambil nama manager
+        },
+        tasks: {
+          select: { status: true } // Cuma ambil statusnya aja buat ngitung persentase
+        }
+      }
+    });
+    
+    res.json({ message: "Berhasil mengambil data project", projects });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 1. ENDPOINT: AMBIL DAFTAR WORKER 
+app.get('/api/workers', authenticateToken, async (req, res) => {
+  try {
+    // Memastikan hanya manager atau admin yang bisa melihat daftar semua worker
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+
+    const workers = await prisma.user.findMany({
+      where: { role: 'worker' },
+      select: { user_id: true, name: true, division: true }
+    });
+    res.json({ workers });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. ENDPOINT: CREATE TASK & ASSIGN TO WORKER
+app.post('/api/tasks', authenticateToken, async (req, res) => {
+  try {
+    // Validasi: Hanya Manager atau Admin yang bisa membuat & assign task
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak! Hanya Manager yang bisa membuat task." });
+    }
+
+    const { project_id, worker_id, task_name, description, deadline, sequence_order } = req.body;
+
+    // Simpan task baru ke database lewat Prisma
+    const newTask = await prisma.task.create({
+      data: {
+        project_id: parseInt(project_id),
+        worker_id: parseInt(worker_id),
+        task_name,
+        description,
+        deadline: deadline ? new Date(deadline) : null,
+        sequence_order: sequence_order ? parseInt(sequence_order) : 0,
+        status: "todo" 
+      }
+    });
+
+    res.status(201).json({ message: "Task berhasil dibuat dan diassign ke Worker!", task: newTask });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. ENDPOINT: GET ALL TASKS 
+app.get('/api/tasks', authenticateToken, async (req, res) => {
+  try {
+    let whereCondition = {};
+
+    // Jika yang login adalah worker, filter task berdasarkan worker_id dia sendiri
+    if (req.user.role === 'worker') {
+      whereCondition = { worker_id: req.user.user_id };
+    }
+
+    const tasks = await prisma.task.findMany({
+      where: whereCondition,
+      include: {
+        project: {
+          select: { project_name: true } 
+        },
+        worker: {
+          select: { name: true, division: true } 
+        },
+        approvals: {
+          select: { note: true, approval_status: true } 
+        }
+      },
+      orderBy: {
+        sequence_order: 'asc' 
+      }
+    });
+
+    res.json({ message: "Berhasil mengambil data task", tasks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 4. ENDPOINT: UPDATE STATUS TASK
+app.patch('/api/tasks/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const { status } = req.body; 
+
+    // Cek dulu apakah tasknya ada
+    const task = await prisma.task.findUnique({ where: { task_id: taskId } });
+    if (!task) return res.status(404).json({ message: "Task tidak ditemukan!" });
+
+    // Validasi Worker hanya boleh mengubah task yang ditugaskan ke dirinya sendiri
+    if (req.user.role === 'worker' && task.worker_id !== req.user.user_id) {
+      return res.status(403).json({ message: "Akses ditolak! Ini bukan task milikmu." });
+    }
+
+    // Update status di database
+    const updatedTask = await prisma.task.update({
+      where: { task_id: taskId },
+      data: { status }
+    });
+
+    res.json({ message: `Status task berhasil diperbarui menjadi ${status}`, task: updatedTask });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/approvals', authenticateToken, async (req, res) => {
+  try {
+    // Validasi Hanya Manager atau Admin yang bisa kasih approval
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak! Hanya Manager yang berhak memberikan approval." });
+    }
+
+    const { task_id, approval_status, note } = req.body; // approval_status: approved / rejected
+
+    // Cek apakah task-nya ada
+    const task = await prisma.task.findUnique({ where: { task_id: parseInt(task_id) } });
+    if (!task) return res.status(404).json({ message: "Task tidak ditemukan!" });
+
+    // Tentukan status akhir task berdasarkan keputusan manager
+    let finalTaskStatus = 'done';
+    if (approval_status === 'rejected') {
+      finalTaskStatus = 'revision';
+    }
+
+    // Eksekusi transaksi
+    const result = await prisma.$transaction([
+      // 1. Simpan riwayat log ke tabel approvals
+      prisma.approval.create({
+        data: {
+          task_id: parseInt(task_id),
+          approved_by: req.user.user_id,
+          approval_status,
+          note
+        }
+      }),
+      // 2. Ubah status di tabel tasks
+      prisma.task.update({
+        where: { task_id: parseInt(task_id) },
+        data: { status: finalTaskStatus }
+      })
+    ]);
+
+    res.status(201).json({ 
+      message: `Approval berhasil diproses. Status task sekarang: ${finalTaskStatus}`, 
+      approval_log: result[0] 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// CLIENT
+// 1. ENDPOINT: CLIENT REQUEST PROJECT
+app.post('/api/projects/request', authenticateToken, async (req, res) => {
+  try {
+    // Validasi: Hanya Client yang boleh akses ini
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ message: "Akses ditolak! Hanya Client yang bisa request proyek." });
+    }
+
+    const { project_name, description } = req.body;
+
+    const newProject = await prisma.project.create({
+      data: {
+        project_name,
+        description,
+        client: {
+          connect: { user_id: req.user.user_id }
+        },
+        status: 'pending' // Status otomatis ditahan dulu
+      }
+    });
+
+    res.status(201).json({ message: "Request proyek berhasil dikirim ke Manager!", project: newProject });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Gagal membuat request proyek." });
+  }
+});
+
+// 2. ENDPOINT: MANAGER APPROVE/REJECT PROJECT
+app.patch('/api/projects/:id/approval', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+
+    const projectId = parseInt(req.params.id);
+    const { status } = req.body; // Isinya nanti 'active' atau 'rejected'
+
+    // Update status project, sekalian assign siapa manager yang nge-handle
+    const updatedProject = await prisma.project.update({
+      where: { project_id: projectId },
+      data: { 
+        status: status,
+        manager_id: req.user.user_id // Otomatis nempel ke Manager yang ngeklik "Terima"
+      }
+    });
+
+    res.json({ message: `Proyek berhasil di-${status === 'active' ? 'terima dan aktif' : 'tolak'}!`, project: updatedProject });
+  } catch (error) {
+    res.status(500).json({ message: "Gagal memproses proyek." });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server berjalan di port ${PORT}`));
