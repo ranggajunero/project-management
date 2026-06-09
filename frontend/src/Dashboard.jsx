@@ -19,6 +19,7 @@ export default function Dashboard({ onLogout }) {
   const [currentRole, setCurrentRole] = useState("");
   const [notes, setNotes] = useState({});
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [formProject, setFormProject] = useState({ project_id: null, project_name: "", description: "" });
 
   // State Navbar Utama untuk Mendeteksi Halaman Aktif
   const [activeTab, setActiveTab] = useState("projects");
@@ -132,19 +133,23 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
+
   const handleCreateTask = async (e) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
+    e.preventDefault(); setError(""); setSuccess("");
     try {
       const token = localStorage.getItem("token");
-      const response = await axios.post("http://localhost:3000/api/tasks", formTask, { headers: { Authorization: `Bearer ${token}` } });
-      setSuccess(response.data.message);
+      if (formTask.task_id) {
+        // JIKA ADA ID = MODE UPDATE
+        await axios.patch(`http://localhost:3000/api/tasks/${formTask.task_id}`, formTask, { headers: { Authorization: `Bearer ${token}` } });
+        setSuccess("Tugas berhasil di-update!");
+      } else {
+        // JIKA GAK ADA ID = MODE CREATE
+        await axios.post("http://localhost:3000/api/tasks", formTask, { headers: { Authorization: `Bearer ${token}` } });
+        setSuccess("Tugas baru berhasil dikirim!");
+      }
       setFormTask({ task_name: "", description: "", deadline: "", project_id: "", worker_id: "" });
-      setRefreshTrigger((prev) => prev + 1);
-    } catch (err) {
-      setError(err.response?.data?.message || "Gagal mengirim tugas baru.");
-    }
+      setRefreshTrigger(prev => prev + 1);
+    } catch { setError("Gagal menyimpan tugas."); }
   };
 
   // Fungsi Simpan User
@@ -238,6 +243,55 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
+  // --- ACTION CRUD PROJECT ---
+  const handleSaveProject = async (e) => {
+    e.preventDefault(); setError(""); setSuccess("");
+    try {
+      const token = localStorage.getItem("token");
+      await axios.patch(`http://localhost:3000/api/projects/${formProject.project_id}`, formProject, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSuccess("Proyek berhasil diperbarui!");
+      setFormProject({ project_id: null, project_name: "", description: "" });
+      setRefreshTrigger(prev => prev + 1);
+    } catch { setError("Gagal mengupdate proyek."); }
+  };
+
+  const handleDeleteProject = async (id, name) => {
+    if (!window.confirm(`HAPUS PROYEK "${name}"? Semua task di dalamnya akan ikut terhapus permanen!`)) return;
+    setError(""); setSuccess("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.delete(`http://localhost:3000/api/projects/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setSuccess(res.data.message);
+      setRefreshTrigger(prev => prev + 1);
+    } catch { setError("Gagal menghapus proyek."); }
+  };
+
+  // --- ACTION CRUD TASK ---
+  const handleEditTaskClick = (task) => {
+    setFormTask({
+      task_id: task.task_id, 
+      task_name: task.task_name,
+      description: task.description,
+      deadline: task.deadline ? task.deadline.split("T")[0] : "",
+      project_id: task.project_id,
+      worker_id: task.worker_id
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleDeleteTask = async (id, name) => {
+    if (!window.confirm(`Hapus tugas "${name}" secara permanen?`)) return;
+    setError(""); setSuccess("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.delete(`http://localhost:3000/api/tasks/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setSuccess(res.data.message);
+      setRefreshTrigger(prev => prev + 1);
+    } catch { setError("Gagal menghapus tugas."); }
+  };
+
   return (
     <div className="bg-slate-50 min-h-screen text-slate-800 font-sans">
       {/* 1. NAVBAR & NAVIGATION COMPONENT */}
@@ -250,10 +304,25 @@ export default function Dashboard({ onLogout }) {
         {success && <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-medium mb-6 shadow-sm">{success}</div>}
 
         {/* 2. SWITCH STATEMENT: LOGIKA ROUTING HALAMAN BERDASARKAN NAV-TAB */}
-        {activeTab === "projects" && <ProjectSection projects={projects} handleProjectApproval={handleProjectApproval} />}
+        {activeTab === "projects" && (
+          <ProjectSection 
+            projects={projects} 
+            handleProjectApproval={handleProjectApproval} 
+            formProject={formProject} 
+            setFormProject={setFormProject} 
+            handleSaveProject={handleSaveProject} 
+            handleDeleteProject={handleDeleteProject}
+          />
+        )}
 
         {activeTab === "tasks" && (
-          <TaskSection projects={projects} workers={workers} tasks={tasks} formTask={formTask} setFormTask={setFormTask} handleCreateTask={handleCreateTask} notes={notes} setNotes={setNotes} handleApprovalAction={handleApprovalAction} />
+          <TaskSection 
+            projects={projects} workers={workers} tasks={tasks} 
+            formTask={formTask} setFormTask={setFormTask} handleCreateTask={handleCreateTask} 
+            notes={notes} setNotes={setNotes} handleApprovalAction={handleApprovalAction} 
+            handleEditTaskClick={handleEditTaskClick} 
+            handleDeleteTask={handleDeleteTask}       
+          />
         )}
 
         {activeTab === "users" && currentRole === "admin" && <UserSection formUser={formUser} setFormUser={setFormUser} handleSaveUser={handleSaveUser} handleEditClick={handleEditClick} handleDeleteUser={handleDeleteUser} users={users} />}

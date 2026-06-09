@@ -11,6 +11,7 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
+// manage login & register user
 app.post('/api/register', async (req, res) => {
   try {
     const { name, email, password, role, division } = req.body;
@@ -113,6 +114,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
   }
 });
 
+// ADMIN
 // UPDATE USER (KHUSUS ADMIN)
 app.patch('/api/users/:id', authenticateToken, async (req, res) => {
   try {
@@ -180,6 +182,7 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// manager
 // create project
 app.post('/api/projects', authenticateToken, async (req, res) => {
   try {
@@ -232,6 +235,88 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
     res.json({ message: "Berhasil mengambil data project", projects });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// UPDATE PROJECT (MANAGER & ADMIN)
+app.patch('/api/projects/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak! Hanya Manager atau Admin yang bisa edit proyek." });
+    }
+    const projectId = parseInt(req.params.id);
+    const { project_name, description } = req.body;
+
+    await prisma.project.update({
+      where: { project_id: projectId },
+      data: { project_name, description }
+    });
+    res.json({ message: "Data proyek berhasil diperbarui!" });
+  } catch (error) {
+    res.status(500).json({ message: "Gagal memperbarui proyek." });
+  }
+});
+
+// DELETE PROJECT (MANAGER & ADMIN)
+app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+    const projectId = parseInt(req.params.id);
+
+    // Hapus dulu task yang terikat dengan proyek ini (Cascade Delete manual)
+    await prisma.task.deleteMany({ where: { project_id: projectId } });
+    
+    // Baru hapus proyeknya
+    await prisma.project.delete({ where: { project_id: projectId } });
+    res.json({ message: "Proyek beserta seluruh tugas di dalamnya berhasil dihapus!" });
+  } catch (error) {
+    res.status(500).json({ message: "Gagal menghapus proyek." });
+  }
+});
+
+// UPDATE TASK (MANAGER & ADMIN)
+app.patch('/api/tasks/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+    const taskId = parseInt(req.params.id);
+    const { task_name, description, deadline, project_id, worker_id } = req.body;
+
+    await prisma.task.update({
+      where: { task_id: taskId },
+      data: {
+        task_name,
+        description,
+        deadline: deadline ? new Date(deadline) : null,
+        project_id: parseInt(project_id),
+        worker_id: parseInt(worker_id),
+        status: "todo" 
+      }
+    });
+    res.json({ message: "Tugas berhasil diperbarui!" });
+  } catch (error) {
+    res.status(500).json({ message: "Gagal memperbarui tugas." });
+  }
+});
+
+// DELETE TASK (MANAGER & ADMIN)
+app.delete('/api/tasks/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+    const taskId = parseInt(req.params.id);
+
+    // Hapus dulu data approval yang terikat dengan task ini
+    await prisma.approval.deleteMany({ where: { task_id: taskId } });
+
+    await prisma.task.delete({ where: { task_id: taskId } });
+    res.json({ message: "Tugas berhasil dihapus dari workspace!" });
+  } catch (error) {
+    res.status(500).json({ message: "Gagal menghapus tugas." });
   }
 });
 
