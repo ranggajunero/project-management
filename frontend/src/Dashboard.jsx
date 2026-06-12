@@ -8,6 +8,7 @@ import Header from "./components/Header";
 import ProjectSection from "./components/ProjectSection";
 import TaskSection from "./components/TaskSection";
 import UserSection from "./components/UserSection";
+import ProfileSection from "./components/ProfileSection";
 
 export default function Dashboard({ onLogout }) {
   const [projects, setProjects] = useState([]);
@@ -326,6 +327,9 @@ export default function Dashboard({ onLogout }) {
         )}
 
         {activeTab === "users" && currentRole === "admin" && <UserSection formUser={formUser} setFormUser={setFormUser} handleSaveUser={handleSaveUser} handleEditClick={handleEditClick} handleDeleteUser={handleDeleteUser} users={users} />}
+
+        {/* profile section */}
+        {activeTab === 'profile' && <ProfileSection />}
       </div>
     </div>
   );

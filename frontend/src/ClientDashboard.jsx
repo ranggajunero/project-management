@@ -3,6 +3,7 @@ import axios from 'axios';
 import Header from './components/Header';
 import ClientProjectGrid from './components/ClientProjectGrid';
 import ClientRequestForm from './components/ClientRequestForm';
+import ProfileSection from './components/ProfileSection';
 
 export default function ClientDashboard({ onLogout }) {
   const [projects, setProjects] = useState([]);
@@ -69,6 +70,8 @@ export default function ClientDashboard({ onLogout }) {
         {activeTab === 'request' && (
           <ClientRequestForm formReq={formReq} setFormReq={setFormReq} handleRequestProject={handleRequestProject} />
         )}
+
+        {activeTab === 'profile' && <ProfileSection />}
       </div>
     </div>
   );

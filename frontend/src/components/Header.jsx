@@ -61,7 +61,14 @@ export default function Header({ currentRole, activeTab, setActiveTab, onDownloa
 
           {/* BAGIAN KANAN: Tombol Aksi */}
           <div className="flex items-center gap-3">
-            {/* Tombol PDF cuma muncul buat Manager/Admin */}
+            {/* profile */}
+            <button 
+              onClick={() => setActiveTab?.('profile')} 
+              className={`px-4 py-2 font-bold text-sm rounded-lg transition ${activeTab === 'profile' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
+            >
+              Profil Saya
+            </button>
+            {/* cetak pdf */}
             {isManagerOrAdmin && (
               <button onClick={onDownloadReport} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1.5">
                 📄 Cetak PDF

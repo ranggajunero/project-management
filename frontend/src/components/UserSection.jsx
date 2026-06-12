@@ -7,6 +7,24 @@ export default function UserSection({ formUser, setFormUser, handleSaveUser, han
     setFormUser({ user_id: null, name: "", email: "", password: "", role: "worker", division: "" });
   };
 
+  const divisiOptions = [
+    "Programmer",
+    "System Analyst",
+    "UI/UX Designer",
+    "Quality Assurance (QA)"
+  ];
+
+  const rolePriority = { admin: 1, manager: 2, client: 3, worker: 4 };
+  
+  const sortedUsers = [...users].sort((a, b) => {
+    // Urutkan berdasarkan prioritas role dulu
+    if (rolePriority[a.role] !== rolePriority[b.role]) {
+      return rolePriority[a.role] - rolePriority[b.role];
+    }
+    // Kalau role-nya sama, urutkan berdasarkan abjad nama
+    return a.name.localeCompare(b.name);
+  });
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
       {/* FORM REGISTRASI / EDIT USER */}
@@ -61,13 +79,17 @@ export default function UserSection({ formUser, setFormUser, handleSaveUser, han
           {formUser.role === "worker" && (
             <div>
               <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Divisi Kerja</label>
-              <input
-                type="text"
-                placeholder="Contoh: Programmer"
+              <select
+                required
                 value={formUser.division || ""}
                 onChange={(e) => setFormUser({ ...formUser, division: e.target.value })}
                 className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-purple-500 transition"
-              />
+              >
+                <option value="" disabled>-- Pilih Divisi --</option>
+                {divisiOptions.map((divisi, index) => (
+                  <option key={index} value={divisi}>{divisi}</option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -86,7 +108,7 @@ export default function UserSection({ formUser, setFormUser, handleSaveUser, han
 
       {/* TABEL DAFTAR USER */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 overflow-hidden xl:col-span-2">
-        <h3 className="text-lg font-bold text-slate-800 mb-4">👥 Daftar Pengguna Sistem</h3>
+        <h3 className="text-lg font-bold text-slate-800 mb-4">Daftar Pengguna Sistem</h3>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-sm text-slate-600">
             <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
@@ -98,7 +120,7 @@ export default function UserSection({ formUser, setFormUser, handleSaveUser, han
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {users.map((u, idx) => (
+              {sortedUsers.map((u, idx) => (
                 <tr key={idx} className="hover:bg-slate-50/70 transition">
                   <td className="p-3 font-semibold text-slate-900">
                     {u.name}
