@@ -228,12 +228,15 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
         },
         tasks: {
           select: { status: true } // Cuma ambil statusnya aja buat ngitung persentase
-        }
-      }
+        },
+        tasks: true,
+      },
+      orderBy: { project_id: 'desc' }
     });
     
     res.json({ message: "Berhasil mengambil data project", projects });
   } catch (error) {
+    console.error("ERROR GET PROJECTS:", error); 
     res.status(500).json({ error: error.message });
   }
 });
@@ -527,6 +530,48 @@ app.patch('/api/projects/:id/approval', authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Gagal memproses proyek." });
   }
 });
+
+// UPDATE PASSWORD (UNTUK SEMUA ROLE DARI HALAMAN PROFIL)
+app.patch('/api/profile/password', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Password lama dan password baru wajib diisi." });
+    }
+
+    // Cari data user berdasarkan token yang aktif
+    const user = await prisma.user.findUnique({
+      where: { user_id: userId }
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "Pengguna tidak ditemukan." });
+    }
+
+    // Validasi apakah password lama sesuai dengan yang ada di database
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Password lama yang Anda masukkan salah." });
+    }
+
+    // Hash password baru
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password di database
+    await prisma.user.update({
+      where: { user_id: userId },
+      data: { password: hashedPassword }
+    });
+
+    res.json({ message: "Password berhasil diperbarui secara aman." });
+  } catch (error) {
+    console.error("Error update password:", error);
+    res.status(500).json({ message: "Gagal memperbarui password pada server." });
+  }
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server berjalan di port ${PORT}`));

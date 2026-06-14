@@ -33,7 +33,7 @@ export default function Login({ onLoginSuccess }) {
       <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-lg border border-slate-100">
         
         <div className="text-center mb-8">
-          <h2 className="text-3xl font-black text-blue-700 tracking-tight">System Login</h2>
+          <h2 className="text-3xl font-black text-blue-700 tracking-tight">Login</h2>
           <p className="text-slate-500 text-sm mt-2">Silakan masuk ke akun workspace Anda</p>
         </div>
 
