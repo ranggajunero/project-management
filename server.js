@@ -15,10 +15,10 @@ app.use(express.json());
 app.post('/api/register', async (req, res) => {
   try {
     const { name, email, password, role, division } = req.body;
-    
+
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     // Simpan ke database menggunakan Prisma
     const newUser = await prisma.user.create({
       data: {
@@ -29,7 +29,7 @@ app.post('/api/register', async (req, res) => {
         division
       }
     });
-    
+
     res.status(201).json({ message: "User berhasil dibuat!", user: { id: newUser.user_id, email: newUser.email } });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -39,25 +39,25 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     // Cari user berdasarkan email lewat Prisma
     const user = await prisma.user.findUnique({
       where: { email }
     });
-    
+
     if (!user) return res.status(404).json({ message: "User tidak ditemukan!" });
-    
+
     // Cek Password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: "Password salah!" });
-    
+
     // Buat JWT Token
     const token = jwt.sign(
       { user_id: user.user_id, role: user.role, division: user.division },
       process.env.JWT_SECRET,
       { expiresIn: '1d' }
     );
-    
+
     res.json({
       message: "Login berhasil!",
       token,
@@ -83,10 +83,10 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ message: "Token tidak valid atau sudah kedaluwarsa!" });
-    
+
     // Simpan data user dari token ke dalam req.user agar bisa dipakai di endpoint
-    req.user = user; 
-    next(); 
+    req.user = user;
+    next();
   });
 };
 
@@ -192,14 +192,14 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
     }
 
     const { client_id, project_name, description, start_date, end_date } = req.body;
-    
+
     // manager_id diambil otomatis dari siapa yang sedang login (lewat token)
     const manager_id = req.user.user_id;
 
     // Simpan ke database
     const newProject = await prisma.project.create({
       data: {
-        client_id: parseInt(client_id), 
+        client_id: parseInt(client_id),
         manager_id: manager_id,
         project_name,
         description,
@@ -233,10 +233,10 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
       },
       orderBy: { project_id: 'desc' }
     });
-    
+
     res.json({ message: "Berhasil mengambil data project", projects });
   } catch (error) {
-    console.error("ERROR GET PROJECTS:", error); 
+    console.error("ERROR GET PROJECTS:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -270,7 +270,7 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
 
     // Hapus dulu task yang terikat dengan proyek ini (Cascade Delete manual)
     await prisma.task.deleteMany({ where: { project_id: projectId } });
-    
+
     // Baru hapus proyeknya
     await prisma.project.delete({ where: { project_id: projectId } });
     res.json({ message: "Proyek beserta seluruh tugas di dalamnya berhasil dihapus!" });
@@ -296,7 +296,7 @@ app.patch('/api/tasks/:id', authenticateToken, async (req, res) => {
         deadline: deadline ? new Date(deadline) : null,
         project_id: parseInt(project_id),
         worker_id: parseInt(worker_id),
-        status: "todo" 
+        status: "todo"
       }
     });
     res.json({ message: "Tugas berhasil diperbarui!" });
@@ -360,7 +360,7 @@ app.post('/api/tasks', authenticateToken, async (req, res) => {
         description,
         deadline: deadline ? new Date(deadline) : null,
         sequence_order: sequence_order ? parseInt(sequence_order) : 0,
-        status: "todo" 
+        status: "todo"
       }
     });
 
@@ -383,17 +383,17 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
       where: whereCondition,
       include: {
         project: {
-          select: { project_name: true } 
+          select: { project_name: true }
         },
         worker: {
-          select: { name: true, division: true } 
+          select: { name: true, division: true }
         },
         approvals: {
-          select: { note: true, approval_status: true } 
+          select: { note: true, approval_status: true }
         }
       },
       orderBy: {
-        sequence_order: 'asc' 
+        sequence_order: 'asc'
       }
     });
 
@@ -407,7 +407,7 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
           status: { not: 'done' }
         }
       });
-      
+
       return {
         ...task,
         is_locked: pendingPreviousTasks > 0 // Jika > 0, berarti tugas ini terkunci
@@ -425,7 +425,7 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
 app.patch('/api/tasks/:id/status', authenticateToken, async (req, res) => {
   try {
     const taskId = parseInt(req.params.id);
-    const { status } = req.body; 
+    const { status } = req.body;
 
     // Cek keberadaan task
     const task = await prisma.task.findUnique({ where: { task_id: taskId } });
@@ -517,9 +517,9 @@ app.post('/api/approvals', authenticateToken, async (req, res) => {
       }
     }
 
-    res.status(201).json({ 
-      message: `Approval berhasil diproses. Status task sekarang: ${finalTaskStatus}`, 
-      approval_log: result[0] 
+    res.status(201).json({
+      message: `Approval berhasil diproses. Status task sekarang: ${finalTaskStatus}`,
+      approval_log: result[0]
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -567,7 +567,7 @@ app.patch('/api/projects/:id/approval', authenticateToken, async (req, res) => {
 
     const updatedProject = await prisma.project.update({
       where: { project_id: projectId },
-      data: { 
+      data: {
         status: status,
         manager_id: req.user.user_id,
         price: status === 'quotation' ? price : null,
@@ -576,8 +576,8 @@ app.patch('/api/projects/:id/approval', authenticateToken, async (req, res) => {
       }
     });
 
-    const messageResponse = status === 'quotation' 
-      ? "Penawaran harga dan timeline berhasil dikirimkan ke Client." 
+    const messageResponse = status === 'quotation'
+      ? "Penawaran harga dan timeline berhasil dikirimkan ke Client."
       : "Request proyek berhasil ditolak.";
 
     res.json({ message: messageResponse, project: updatedProject });
@@ -607,9 +607,9 @@ app.patch('/api/projects/:id/quotation-response', authenticateToken, async (req,
       data: { status: finalStatus }
     });
 
-    res.json({ 
-      message: `Penawaran proyek berhasil di-${action === 'approve' ? 'setujui dan proyek sekarang aktif' : 'tolak'}.`, 
-      project: updatedProject 
+    res.json({
+      message: `Penawaran proyek berhasil di-${action === 'approve' ? 'setujui dan proyek sekarang aktif' : 'tolak'}.`,
+      project: updatedProject
     });
   } catch (error) {
     console.error("ERROR QUOTATION RESPONSE:", error);
@@ -666,12 +666,12 @@ app.patch('/api/projects/:id/send-qa', authenticateToken, async (req, res) => {
     if (req.user.role !== 'manager' && req.user.role !== 'admin') {
       return res.status(403).json({ message: "Akses ditolak!" });
     }
-    
+
     await prisma.project.update({
       where: { project_id: parseInt(req.params.id) },
       data: { status: 'testing' }
     });
-    
+
     res.json({ message: "Proyek berhasil diserahkan ke tim QA untuk diuji." });
   } catch (error) {
     console.error("ERROR SEND TO QA:", error);
@@ -710,7 +710,7 @@ app.post('/api/projects/:id/qa-result', authenticateToken, async (req, res) => {
     }
 
     const projectId = parseInt(req.params.id);
-    const { result, task_id, note } = req.body; 
+    const { result, task_id, note } = req.body;
 
     if (result === 'pass') {
       // Jika lolos, status proyek siap diserahkan ke klien
@@ -719,7 +719,7 @@ app.post('/api/projects/:id/qa-result', authenticateToken, async (req, res) => {
         data: { status: 'ready_to_close' }
       });
       res.json({ message: "Proyek dinyatakan lolos testing dan siap diserahkan ke Klien." });
-      
+
     } else if (result === 'fail') {
       // Jika ada bug, kembalikan proyek ke active dan task ke revision
       await prisma.$transaction([
@@ -745,6 +745,25 @@ app.post('/api/projects/:id/qa-result', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("ERROR QA RESULT:", error);
     res.status(500).json({ message: "Gagal memproses hasil testing." });
+  }
+});
+
+// MANAGER: TUTUP PROYEK (SELESAI)
+app.patch('/api/projects/:id/close', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+
+    await prisma.project.update({
+      where: { project_id: parseInt(req.params.id) },
+      data: { status: 'completed' }
+    });
+
+    res.json({ message: "Proyek resmi ditutup dan diselesaikan!" });
+  } catch (error) {
+    console.error("ERROR CLOSE PROJECT:", error);
+    res.status(500).json({ message: "Gagal menutup proyek." });
   }
 });
 

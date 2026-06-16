@@ -3,7 +3,7 @@ import axios from 'axios';
 
 export default function ProjectSection({ projects, formProject, setFormProject, handleSaveProject, handleDeleteProject }) {
   const isEditingProject = formProject.project_id !== null;
-  
+
   // State untuk modal detail tugas (sudah ada sebelumnya)
   const [selectedProject, setSelectedProject] = useState(null);
 
@@ -31,7 +31,7 @@ export default function ProjectSection({ projects, formProject, setFormProject, 
       setQuotationModal(null);
       setQuotationForm({ price: '', start_date: '', end_date: '' });
       // Refresh halaman untuk memperbarui data di tabel
-      window.location.reload(); 
+      window.location.reload();
     } catch (error) {
       alert(error.response?.data?.message || "Gagal mengirim penawaran.");
     } finally {
@@ -66,6 +66,17 @@ export default function ProjectSection({ projects, formProject, setFormProject, 
     }
   };
 
+  const closeProject = async (id) => {
+    if (!window.confirm("Tutup proyek ini secara resmi dan serahkan hasil akhir ke Klien?")) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(`http://localhost:3000/api/projects/${id}/close`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      window.location.reload();
+    } catch (error) {
+      alert("Gagal menutup proyek.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* FORM EDIT MODAL MELAYANG */}
@@ -74,11 +85,11 @@ export default function ProjectSection({ projects, formProject, setFormProject, 
           <h3 className="text-base font-bold text-amber-800 mb-3">Mode Edit Detail Proyek</h3>
           <form onSubmit={handleSaveProject} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <input type="text" required placeholder="Nama Proyek" value={formProject.project_name} onChange={e => setFormProject({...formProject, project_name: e.target.value})} className="p-2 border rounded-lg text-sm bg-white outline-none"/>
-              <input type="text" required placeholder="Deskripsi Kebutuhan" value={formProject.description} onChange={e => setFormProject({...formProject, description: e.target.value})} className="p-2 border rounded-lg text-sm bg-white outline-none"/>
+              <input type="text" required placeholder="Nama Proyek" value={formProject.project_name} onChange={e => setFormProject({ ...formProject, project_name: e.target.value })} className="p-2 border rounded-lg text-sm bg-white outline-none" />
+              <input type="text" required placeholder="Deskripsi Kebutuhan" value={formProject.description} onChange={e => setFormProject({ ...formProject, description: e.target.value })} className="p-2 border rounded-lg text-sm bg-white outline-none" />
             </div>
             <div className="flex gap-2 justify-end">
-              <button type="button" onClick={() => setFormProject({project_id: null, project_name:"", description:""})} className="px-3 py-1.5 bg-slate-200 text-slate-700 font-bold rounded text-xs">Batal</button>
+              <button type="button" onClick={() => setFormProject({ project_id: null, project_name: "", description: "" })} className="px-3 py-1.5 bg-slate-200 text-slate-700 font-bold rounded text-xs">Batal</button>
               <button type="submit" className="px-3 py-1.5 bg-amber-600 text-white font-bold rounded text-xs shadow">Simpan</button>
             </div>
           </form>
@@ -105,44 +116,54 @@ export default function ProjectSection({ projects, formProject, setFormProject, 
                   <td className="p-4 font-bold text-slate-900">{proj.project_name}</td>
                   <td className="p-4 text-slate-500">{proj.description}</td>
                   <td className="p-4 font-medium">{proj.client?.name || "No Client"}</td>
+                  {/* KOLOM STATUS DENGAN WARNA YANG DISEMPURNAKAN */}
                   <td className="p-4">
-                    <span className={`px-2.5 py-1 text-xs font-bold uppercase rounded-md tracking-wider ${
-                      proj.status === 'active' ? 'bg-blue-50 text-blue-700' : 
-                      proj.status === 'pending' ? 'bg-amber-50 text-amber-700' : 
-                      proj.status === 'quotation' ? 'bg-purple-50 text-purple-700' : 
-                      'bg-slate-100 text-slate-700'
-                    }`}>
-                      {proj.status}
+                    <span className={`px-2.5 py-1 text-xs font-bold uppercase rounded-md tracking-wider ${proj.status?.toLowerCase() === 'active' ? 'bg-blue-50 text-blue-700' :
+                        proj.status?.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-700' :
+                          proj.status?.toLowerCase() === 'quotation' ? 'bg-purple-50 text-purple-700' :
+                            proj.status?.toLowerCase() === 'ready_to_close' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                              proj.status?.toLowerCase() === 'completed' ? 'bg-slate-800 text-white' :
+                                'bg-slate-100 text-slate-700'
+                      }`}>
+                      {/* Teks diubah agar tidak ada garis bawah (underscore) */}
+                      {proj.status?.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  
-                  {/* KOLOM KELOLA DINAMIS BERDASARKAN STATUS */}
+
+                  {/* KOLOM KELOLA DINAMIS (KEBAL HURUF BESAR/KECIL) */}
                   <td className="p-4 flex gap-2 items-center flex-wrap">
-                    {proj.status === 'pending' && (
+                    {proj.status?.toLowerCase() === 'pending' && (
                       <>
                         <button onClick={() => setQuotationModal(proj)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition shadow-sm">Buat Penawaran</button>
                         <button onClick={() => rejectProject(proj.project_id)} className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold rounded text-xs transition border border-rose-200">Tolak</button>
                       </>
                     )}
 
-                    {proj.status === 'quotation' && (
+                    {proj.status?.toLowerCase() === 'quotation' && (
                       <span className="text-xs font-bold text-slate-400 italic">Menunggu respon Klien...</span>
                     )}
 
-
-                    {proj.status === 'active' && (
+                    {proj.status?.toLowerCase() === 'active' && (
                       <>
-                        {/* Pengecekan: Jika tugas ada dan SEMUA statusnya 'done', munculkan tombol QA */}
                         {proj.tasks?.length > 0 && proj.tasks.every(t => t.status === 'done') && (
                           <button onClick={() => sendToQA(proj.project_id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition shadow-sm">
                             Serahkan ke QA
                           </button>
                         )}
-                        
                         <button onClick={() => setSelectedProject(proj)} className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded text-xs transition border border-indigo-200">Detail Tugas</button>
                         <button onClick={() => setFormProject({ project_id: proj.project_id, project_name: proj.project_name, description: proj.description })} className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded text-xs transition">Edit</button>
                         <button onClick={() => handleDeleteProject(proj.project_id, proj.project_name)} className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded text-xs transition">Hapus</button>
                       </>
+                    )}
+
+                    {proj.status?.toLowerCase() === 'ready_to_close' && (
+                      <button onClick={() => closeProject(proj.project_id)} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition shadow-sm w-full">
+                        Selesaikan Proyek
+                      </button>
+                    )}
+
+                    {proj.status?.toLowerCase() === 'completed' && (
+                      <span className="text-emerald-600 font-bold text-xs italic">Proyek Telah Selesai</span>
                     )}
                   </td>
 
@@ -161,44 +182,44 @@ export default function ProjectSection({ projects, formProject, setFormProject, 
               <h2 className="font-bold text-slate-800 text-lg">Buat Penawaran Proyek</h2>
               <button onClick={() => setQuotationModal(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
-            
+
             <form onSubmit={submitQuotation} className="p-5 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Harga Penawaran</label>
-                <input 
-                  type="text" 
-                  required 
-                  placeholder="Contoh: Rp 15.000.000" 
-                  value={quotationForm.price} 
-                  onChange={(e) => setQuotationForm({...quotationForm, price: e.target.value})} 
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Rp 15.000.000"
+                  value={quotationForm.price}
+                  onChange={(e) => setQuotationForm({ ...quotationForm, price: e.target.value })}
                   className="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Tanggal Mulai</label>
-                  <input 
-                    type="date" 
-                    required 
-                    value={quotationForm.start_date} 
-                    onChange={(e) => setQuotationForm({...quotationForm, start_date: e.target.value})} 
+                  <input
+                    type="date"
+                    required
+                    value={quotationForm.start_date}
+                    onChange={(e) => setQuotationForm({ ...quotationForm, start_date: e.target.value })}
                     className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Target Selesai</label>
-                  <input 
-                    type="date" 
-                    required 
-                    value={quotationForm.end_date} 
-                    onChange={(e) => setQuotationForm({...quotationForm, end_date: e.target.value})} 
+                  <input
+                    type="date"
+                    required
+                    value={quotationForm.end_date}
+                    onChange={(e) => setQuotationForm({ ...quotationForm, end_date: e.target.value })}
                     className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
               </div>
               <div className="pt-4">
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={loading}
                   className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-sm transition shadow-sm disabled:bg-slate-400"
                 >
