@@ -1,14 +1,37 @@
 import { useState } from 'react';
+import axios from 'axios';
 
-export default function ClientProjectGrid({ projects }) {
-  // State untuk nyimpen project mana yang lagi diklik detailnya
+export default function ClientProjectGrid({ projects, onRefresh }) {
   const [selectedProject, setSelectedProject] = useState(null);
+  const [loadingAction, setLoadingAction] = useState(false);
+
+  const handleQuotationResponse = async (projectId, action) => {
+    setLoadingAction(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.patch(
+        `http://localhost:3000/api/projects/${projectId}/quotation-response`,
+        { action },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert(response.data.message);
+      if (onRefresh) onRefresh(); // Panggil fungsi refresh data jika ada
+    } catch (error) {
+      alert(error.response?.data?.message || "Gagal memproses respon.");
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
 
   return (
     <div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {projects.map((proj) => {
-          // --- LOGIKA PROGRESS BAR ---
           const tasks = proj.tasks || [];
           const totalTasks = tasks.length;
           const doneTasks = tasks.filter(t => t.status === 'done').length;
@@ -18,28 +41,64 @@ export default function ClientProjectGrid({ projects }) {
             <div key={proj.project_id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col hover:shadow-md transition">
               <div className="flex justify-between items-start mb-3">
                 <h3 className="font-bold text-slate-800 text-lg">{proj.project_name}</h3>
-                <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-md tracking-wider ${proj.status === 'active' ? 'bg-blue-50 text-blue-700' : proj.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                  {proj.status}
+                <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-md tracking-wider ${
+                  proj.status === 'active' ? 'bg-blue-50 text-blue-700' : 
+                  proj.status === 'pending' ? 'bg-amber-50 text-amber-700' : 
+                  proj.status === 'quotation' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                  'bg-slate-100 text-slate-600'
+                }`}>
+                  {proj.status === 'quotation' ? 'Penawaran' : proj.status}
                 </span>
               </div>
               
-              <p className="text-sm text-slate-500 mb-5 flex-1 whitespace-pre-wrap">{proj.description}</p>
+              <p className="text-sm text-slate-500 mb-4 flex-1 whitespace-pre-wrap">{proj.description}</p>
 
-              {/* PROGRESS BAR UI */}
-              <div className="mb-4">
-                <div className="flex justify-between text-xs mb-1 font-bold">
-                  <span className="text-slate-500">Progress Proyek</span>
-                  <span className="text-blue-600">{progressPercent}%</span>
+              {/* TAMPILAN DETAIL PENAWARAN (JIKA STATUS QUOTATION ATAU ACTIVE) */}
+              {(proj.status === 'quotation' || proj.status === 'active') && proj.price && (
+                <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs space-y-1">
+                  <div className="text-slate-500 font-bold uppercase tracking-wide text-[10px]">Detail Penawaran Manager:</div>
+                  <div className="text-slate-800 font-medium">Harga: <span className="font-bold text-emerald-600">{proj.price}</span></div>
+                  <div className="text-slate-800 font-medium">Timeline: {formatDate(proj.start_date)} s/d {formatDate(proj.end_date)}</div>
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-2.5">
-                  <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1 font-medium">{doneTasks} dari {totalTasks} task selesai</p>
-              </div>
+              )}
 
-              <button onClick={() => setSelectedProject(proj)} className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold transition">
-                Lihat Detail Task
-              </button>
+              {/* AREA ACTION UNTUK CLIENT PADA STATUS QUOTATION */}
+              {proj.status === 'quotation' ? (
+                <div className="flex gap-2 mb-2">
+                  <button 
+                    disabled={loadingAction}
+                    onClick={() => handleQuotationResponse(proj.project_id, 'approve')}
+                    className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition shadow-sm disabled:bg-slate-300"
+                  >
+                    Terima Penawaran
+                  </button>
+                  <button 
+                    disabled={loadingAction}
+                    onClick={() => handleQuotationResponse(proj.project_id, 'reject')}
+                    className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition shadow-sm disabled:bg-slate-300"
+                  >
+                    Tolak
+                  </button>
+                </div>
+              ) : proj.status === 'active' ? (
+                /* PROGRESS BAR UI JIKA SUDAH AKTIF */
+                <div className="mb-4">
+                  <div className="flex justify-between text-xs mb-1 font-bold">
+                    <span className="text-slate-500">Progress Proyek</span>
+                    <span className="text-blue-600">{progressPercent}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2.5">
+                    <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 font-medium">{doneTasks} dari {totalTasks} task selesai</p>
+                </div>
+              ) : null}
+
+              {proj.status === 'active' && (
+                <button onClick={() => setSelectedProject(proj)} className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold transition">
+                  Lihat Detail Task
+                </button>
+              )}
             </div>
           );
         })}

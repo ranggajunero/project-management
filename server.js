@@ -375,12 +375,11 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
   try {
     let whereCondition = {};
 
-    // Jika yang login adalah worker, filter task berdasarkan worker_id dia sendiri
     if (req.user.role === 'worker') {
       whereCondition = { worker_id: req.user.user_id };
     }
 
-    const tasks = await prisma.task.findMany({
+    const rawTasks = await prisma.task.findMany({
       where: whereCondition,
       include: {
         project: {
@@ -398,8 +397,26 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
       }
     });
 
+    // LOGIKA SEQUENTIAL (URUTAN TUGAS)
+    // Cek apakah ada tugas dengan urutan lebih kecil yang belum selesai di project yang sama
+    const tasks = await Promise.all(rawTasks.map(async (task) => {
+      const pendingPreviousTasks = await prisma.task.count({
+        where: {
+          project_id: task.project_id,
+          sequence_order: { lt: task.sequence_order }, // lt = less than (lebih kecil dari)
+          status: { not: 'done' }
+        }
+      });
+      
+      return {
+        ...task,
+        is_locked: pendingPreviousTasks > 0 // Jika > 0, berarti tugas ini terkunci
+      };
+    }));
+
     res.json({ message: "Berhasil mengambil data task", tasks });
   } catch (error) {
+    console.error("ERROR GET TASKS:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -410,16 +427,31 @@ app.patch('/api/tasks/:id/status', authenticateToken, async (req, res) => {
     const taskId = parseInt(req.params.id);
     const { status } = req.body; 
 
-    // Cek dulu apakah tasknya ada
+    // Cek keberadaan task
     const task = await prisma.task.findUnique({ where: { task_id: taskId } });
     if (!task) return res.status(404).json({ message: "Task tidak ditemukan!" });
 
-    // Validasi Worker hanya boleh mengubah task yang ditugaskan ke dirinya sendiri
-    if (req.user.role === 'worker' && task.worker_id !== req.user.user_id) {
-      return res.status(403).json({ message: "Akses ditolak! Ini bukan task milikmu." });
+    // Validasi otorisasi worker
+    if (req.user.role === 'worker') {
+      if (task.worker_id !== req.user.user_id) {
+        return res.status(403).json({ message: "Akses ditolak! Ini bukan task milikmu." });
+      }
+
+      // VALIDASI KUNCI URUTAN: Pastikan tidak ada task dengan urutan lebih kecil yang belum 'done'
+      const pendingPreviousTasks = await prisma.task.count({
+        where: {
+          project_id: task.project_id,
+          sequence_order: { lt: task.sequence_order },
+          status: { not: 'done' }
+        }
+      });
+
+      if (pendingPreviousTasks > 0) {
+        return res.status(403).json({ message: "Gagal! Anda harus menunggu tugas pada urutan sebelumnya selesai dikerjakan." });
+      }
     }
 
-    // Update status di database
+    // Update status jika lolos validasi
     const updatedTask = await prisma.task.update({
       where: { task_id: taskId },
       data: { status }
@@ -427,6 +459,7 @@ app.patch('/api/tasks/:id/status', authenticateToken, async (req, res) => {
 
     res.json({ message: `Status task berhasil diperbarui menjadi ${status}`, task: updatedTask });
   } catch (error) {
+    console.error("ERROR UPDATE TASK STATUS:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -468,6 +501,22 @@ app.post('/api/approvals', authenticateToken, async (req, res) => {
       })
     ]);
 
+    // AUTO-UPDATE PROJECT STATUS TO 'testing' IF ALL TASKS ARE 'done'
+    if (finalTaskStatus === 'done') {
+      const pendingTasksCount = await prisma.task.count({
+        where: {
+          project_id: task.project_id,
+          status: { not: 'done' }
+        }
+      });
+      if (pendingTasksCount === 0) {
+        await prisma.project.update({
+          where: { project_id: task.project_id },
+          data: { status: 'testing' }
+        });
+      }
+    }
+
     res.status(201).json({ 
       message: `Approval berhasil diproses. Status task sekarang: ${finalTaskStatus}`, 
       approval_log: result[0] 
@@ -506,28 +555,65 @@ app.post('/api/projects/request', authenticateToken, async (req, res) => {
   }
 });
 
-// 2. ENDPOINT: MANAGER APPROVE/REJECT PROJECT
+// 2. ENDPOINT: MANAGER MENGIRIMKAN PENAWARAN (HARGA & TIMELINE)
 app.patch('/api/projects/:id/approval', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'manager' && req.user.role !== 'admin') {
-      return res.status(403).json({ message: "Akses ditolak!" });
+      return res.status(403).json({ message: "Akses ditolak! Hanya Manager atau Admin yang dapat memproses request." });
     }
 
     const projectId = parseInt(req.params.id);
-    const { status } = req.body; // Isinya nanti 'active' atau 'rejected'
+    const { status, price, start_date, end_date } = req.body; // status bisa 'quotation' atau 'rejected'
 
-    // Update status project, sekalian assign siapa manager yang nge-handle
     const updatedProject = await prisma.project.update({
       where: { project_id: projectId },
       data: { 
         status: status,
-        manager_id: req.user.user_id // Otomatis nempel ke Manager yang ngeklik "Terima"
+        manager_id: req.user.user_id,
+        price: status === 'quotation' ? price : null,
+        start_date: start_date ? new Date(start_date) : null,
+        end_date: end_date ? new Date(end_date) : null
       }
     });
 
-    res.json({ message: `Proyek berhasil di-${status === 'active' ? 'terima dan aktif' : 'tolak'}!`, project: updatedProject });
+    const messageResponse = status === 'quotation' 
+      ? "Penawaran harga dan timeline berhasil dikirimkan ke Client." 
+      : "Request proyek berhasil ditolak.";
+
+    res.json({ message: messageResponse, project: updatedProject });
   } catch (error) {
-    res.status(500).json({ message: "Gagal memproses proyek." });
+    console.error("ERROR PROJECT APPROVAL:", error);
+    res.status(500).json({ message: "Gagal memproses penawaran proyek." });
+  }
+});
+
+// 3. ENDPOINT NEW: CLIENT MENYETUJUI ATAU MENOLAK PENAWARAN MANAGER
+app.patch('/api/projects/:id/quotation-response', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ message: "Akses ditolak! Hanya Client yang dapat merespon penawaran." });
+    }
+
+    const projectId = parseInt(req.params.id);
+    const { action } = req.body; // Isinya 'approve' atau 'reject'
+
+    let finalStatus = 'active';
+    if (action === 'reject') {
+      finalStatus = 'rejected';
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { project_id: projectId },
+      data: { status: finalStatus }
+    });
+
+    res.json({ 
+      message: `Penawaran proyek berhasil di-${action === 'approve' ? 'setujui dan proyek sekarang aktif' : 'tolak'}.`, 
+      project: updatedProject 
+    });
+  } catch (error) {
+    console.error("ERROR QUOTATION RESPONSE:", error);
+    res.status(500).json({ message: "Gagal memproses respon penawaran." });
   }
 });
 
@@ -572,6 +658,95 @@ app.patch('/api/profile/password', authenticateToken, async (req, res) => {
   }
 });
 
+//  Qa Cek hasil pekerjaan
+
+// 1. MANAGER: SERAHKAN PROYEK KE QA
+app.patch('/api/projects/:id/send-qa', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+    
+    await prisma.project.update({
+      where: { project_id: parseInt(req.params.id) },
+      data: { status: 'testing' }
+    });
+    
+    res.json({ message: "Proyek berhasil diserahkan ke tim QA untuk diuji." });
+  } catch (error) {
+    console.error("ERROR SEND TO QA:", error);
+    res.status(500).json({ message: "Gagal menyerahkan proyek ke QA." });
+  }
+});
+
+// 2. QA: AMBIL DAFTAR PROYEK YANG BUTUH TESTING
+app.get('/api/projects/testing', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'worker') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+
+    const projects = await prisma.project.findMany({
+      where: { status: 'testing' },
+      include: {
+        tasks: {
+          include: { worker: { select: { name: true, division: true } } }
+        }
+      }
+    });
+
+    res.json({ projects });
+  } catch (error) {
+    console.error("ERROR GET QA PROJECTS:", error);
+    res.status(500).json({ message: "Gagal menarik data proyek testing." });
+  }
+});
+
+// 3. QA: SUBMIT HASIL TESTING (LOLOS / BUG)
+app.post('/api/projects/:id/qa-result', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'worker') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+
+    const projectId = parseInt(req.params.id);
+    const { result, task_id, note } = req.body; 
+
+    if (result === 'pass') {
+      // Jika lolos, status proyek siap diserahkan ke klien
+      await prisma.project.update({
+        where: { project_id: projectId },
+        data: { status: 'ready_to_close' }
+      });
+      res.json({ message: "Proyek dinyatakan lolos testing dan siap diserahkan ke Klien." });
+      
+    } else if (result === 'fail') {
+      // Jika ada bug, kembalikan proyek ke active dan task ke revision
+      await prisma.$transaction([
+        prisma.project.update({
+          where: { project_id: projectId },
+          data: { status: 'active' }
+        }),
+        prisma.task.update({
+          where: { task_id: parseInt(task_id) },
+          data: { status: 'revision' }
+        }),
+        prisma.approval.create({
+          data: {
+            task_id: parseInt(task_id),
+            approved_by: req.user.user_id,
+            approval_status: 'rejected_by_qa',
+            note: `[BUG REPORT QA] ${note}`
+          }
+        })
+      ]);
+      res.json({ message: "Bug berhasil dilaporkan. Tugas telah dikembalikan ke Programmer untuk direvisi." });
+    }
+  } catch (error) {
+    console.error("ERROR QA RESULT:", error);
+    res.status(500).json({ message: "Gagal memproses hasil testing." });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server berjalan di port ${PORT}`));

@@ -39,6 +39,7 @@ model Project {
   status       String          @default("pending")
   start_date   DateTime?
   end_date     DateTime?
+  price        String?
 
   // Relasi
   client       User            @relation("ClientProjects", fields: [client_id], references: [user_id])

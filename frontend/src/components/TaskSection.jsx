@@ -7,12 +7,30 @@ export default function TaskSection({ projects, workers, tasks, formTask, setFor
   // Logika Filter: Kalau ada proyek yang dipilih, saring task-nya. Kalau kosong, tampilkan semua.
   const filteredTasks = filterProjectId ? tasks.filter((task) => task.project_id.toString() === filterProjectId.toString()) : tasks;
 
+  const formatDate = (dateString) => {
+    if (!dateString) return "Tidak ada deadline";
+    const options = { year: "numeric", month: "long", day: "numeric" };
+    return new Date(dateString).toLocaleDateString("id-ID", options);
+  };
+
   return (
     <div className="space-y-6">
       {/* FORM DELEGASI TUGAS BARU (Tetap Sama) */}
       <div className="p-6 bg-white rounded-xl border border-slate-200 shadow-sm max-w-3xl">
         <h3 className="text-lg font-bold text-blue-600 mb-4">Kirim Tugas Baru ke Worker</h3>
         <form onSubmit={handleCreateTask} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Urutan Pengerjaan</label>
+            <input
+              type="number"
+              min="1"
+              required
+              placeholder="Contoh: 1"
+              value={formTask.sequence_order}
+              onChange={(e) => setFormTask({ ...formTask, sequence_order: parseInt(e.target.value) || 1 })}
+              className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition"
+            />
+          </div>
           <div>
             <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Nama Tugas / Fitur</label>
             <input
@@ -132,10 +150,14 @@ export default function TaskSection({ projects, workers, tasks, formTask, setFor
                   return (
                     <tr key={task.task_id} className="hover:bg-slate-50/50 transition align-top">
                       <td className="p-4">
+                        <div className="inline-block px-2 py-0.5 mb-1.5 bg-slate-800 text-white text-[10px] font-bold rounded uppercase tracking-wider">Urutan {task.sequence_order}</div>
                         <div className="font-bold text-slate-900">{task.task_name}</div>
                         <div className="text-xs text-slate-500 mt-0.5">{task.description}</div>
                       </td>
-                      <td className="p-4 text-slate-700">{task.project?.project_name}</td>
+                      <td className="p-4 text-slate-700">
+                        <div className="font-bold">{task.project?.project_name}</div>
+                        <div className="text-[11px] font-bold text-rose-600 mt-1">Batas Waktu: {formatDate(task.deadline)}</div>
+                      </td>
                       <td className="p-4 font-medium text-slate-900">{task.worker?.name}</td>
                       <td className="p-4">
                         <span className={`px-2 py-0.5 text-xs font-bold uppercase rounded tracking-wide ${badgeStyle}`}>{task.status}</span>
