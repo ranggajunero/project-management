@@ -165,12 +165,22 @@ export default function TaskSection({ projects, workers, tasks, formTask, setFor
                       <td className="p-4">
                         {task.status === "review" ? (
                           <div className="space-y-2">
+                            {task.worker_note && (
+                              <div className="text-[10px] bg-slate-50 p-2 rounded border border-slate-200">
+                                <span className="font-bold text-slate-600">Catatan Pekerja:</span> {task.worker_note}
+                              </div>
+                            )}
+                            {task.file_url && (
+                              <a href={`http://localhost:3000${task.file_url}`} target="_blank" rel="noreferrer" className="inline-block px-2 py-1 text-[10px] bg-blue-100 text-blue-700 font-bold rounded hover:bg-blue-200">
+                                Buka File Hasil Kerja
+                              </a>
+                            )}
                             <input
                               type="text"
                               placeholder="Catatan revisi..."
                               value={notes[task.task_id] || ""}
                               onChange={(e) => setNotes({ ...notes, [task.task_id]: e.target.value })}
-                              className="w-full p-2 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-purple-500 bg-slate-50 outline-none"
+                              className="w-full p-2 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-purple-500 bg-white outline-none"
                             />
                             <div className="flex gap-2">
                               <button onClick={() => handleApprovalAction(task.task_id, "approved")} className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition">
@@ -182,7 +192,17 @@ export default function TaskSection({ projects, workers, tasks, formTask, setFor
                             </div>
                           </div>
                         ) : task.status === "done" ? (
-                          <span className="text-emerald-600 font-bold text-xs">✓ Selesai Sempurna</span>
+                          <div className="space-y-1">
+                            <span className="text-emerald-600 font-bold text-xs">✓ Selesai Sempurna</span>
+                            {task.worker_note && (
+                              <div className="text-[10px] text-slate-500 mt-1"><span className="font-bold text-slate-600">Note:</span> {task.worker_note}</div>
+                            )}
+                            {task.file_url && (
+                              <div className="mt-1">
+                                <a href={`http://localhost:3000${task.file_url}`} target="_blank" rel="noreferrer" className="text-[10px] text-blue-600 hover:underline font-bold">Buka File Akhir</a>
+                              </div>
+                            )}
+                          </div>
                         ) : task.status === "revision" ? (
                           <div className="text-xs text-rose-600 bg-rose-50 p-2 rounded border border-rose-100">
                             <strong>Revisi:</strong> {task.approvals?.[task.approvals.length - 1]?.note || "Perbaiki data"}

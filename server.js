@@ -3,6 +3,9 @@ const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -10,6 +13,24 @@ const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
+
+// Setup multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir);
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_'));
+  }
+});
+const upload = multer({ storage: storage });
+
+// Serve static files from 'uploads' directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // manage login & register user
 app.post('/api/register', async (req, res) => {
@@ -326,15 +347,22 @@ app.delete('/api/tasks/:id', authenticateToken, async (req, res) => {
 // 1. ENDPOINT: AMBIL DAFTAR WORKER 
 app.get('/api/workers', authenticateToken, async (req, res) => {
   try {
-    // Memastikan hanya manager atau admin yang bisa melihat daftar semua worker
     if (req.user.role !== 'manager' && req.user.role !== 'admin') {
       return res.status(403).json({ message: "Akses ditolak!" });
     }
 
     const workers = await prisma.user.findMany({
-      where: { role: 'worker' },
+      where: {
+        role: 'worker',
+        NOT: {
+          division: {
+            contains: 'QA'
+          }
+        }
+      },
       select: { user_id: true, name: true, division: true }
     });
+
     res.json({ workers });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -389,7 +417,7 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
           select: { name: true, division: true }
         },
         approvals: {
-          select: { note: true, approval_status: true }
+          select: { note: true, approval_status: true, file_url: true }
         }
       },
       orderBy: {
@@ -421,17 +449,48 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
   }
 });
 
-// 4. ENDPOINT: UPDATE STATUS TASK
-app.patch('/api/tasks/:id/status', authenticateToken, async (req, res) => {
+// 4. ENDPOINT: UPDATE STATUS TASK// UBAH STATUS TUGAS (Worker kirim ke review, Manager approve/reject)
+app.patch('/api/tasks/:id/status', authenticateToken, upload.single('file'), async (req, res) => {
   try {
     const taskId = parseInt(req.params.id);
-    const { status } = req.body;
+    const { status, worker_note } = req.body;
+    const file_url = req.file ? `/uploads/${req.file.filename}` : undefined;
 
     // Cek keberadaan task
     const task = await prisma.task.findUnique({ where: { task_id: taskId } });
-    if (!task) return res.status(404).json({ message: "Task tidak ditemukan!" });
+    if (!task) return res.status(404).json({ message: "Tugas tidak ditemukan!" });
 
-    // Validasi otorisasi worker
+    const dataToUpdate = { status: status };
+    if (file_url) dataToUpdate.file_url = file_url;
+    if (worker_note !== undefined) dataToUpdate.worker_note = worker_note;
+
+    // --- CASE 1: WORKER SUBMIT TUGAS (MENGIRIM FILE) ---
+    if (status === 'review') {
+      if (req.user.role !== 'worker') {
+        return res.status(403).json({ message: "Hanya Worker yang dapat mensubmit tugas!" });
+      }
+
+      await prisma.task.update({
+        where: { task_id: taskId },
+        data: dataToUpdate
+      });
+      return res.json({ message: "Tugas berhasil dikirim untuk direview beserta file-nya!" });
+    }
+
+    // --- CASE 2: MANAGER KEMBALIKAN TUGAS KE REVISION ---
+    if (status === 'revision') {
+      if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Akses ditolak!" });
+      }
+
+      await prisma.task.update({
+        where: { task_id: taskId },
+        data: { status: 'revision' }
+      });
+      return res.json({ message: "Tugas dikembalikan ke Worker untuk revisi." });
+    }
+
+    // Default update (jika bukan review/revision)
     if (req.user.role === 'worker') {
       if (task.worker_id !== req.user.user_id) {
         return res.status(403).json({ message: "Akses ditolak! Ini bukan task milikmu." });
@@ -703,7 +762,7 @@ app.get('/api/projects/testing', authenticateToken, async (req, res) => {
 });
 
 // 3. QA: SUBMIT HASIL TESTING (LOLOS / BUG)
-app.post('/api/projects/:id/qa-result', authenticateToken, async (req, res) => {
+app.post('/api/projects/:id/qa-result', authenticateToken, upload.single('file'), async (req, res) => {
   try {
     if (req.user.role !== 'worker') {
       return res.status(403).json({ message: "Akses ditolak!" });
@@ -711,6 +770,7 @@ app.post('/api/projects/:id/qa-result', authenticateToken, async (req, res) => {
 
     const projectId = parseInt(req.params.id);
     const { result, task_id, note } = req.body;
+    const file_url = req.file ? `/uploads/${req.file.filename}` : undefined;
 
     if (result === 'pass') {
       // Jika lolos, status proyek siap diserahkan ke klien
@@ -736,7 +796,8 @@ app.post('/api/projects/:id/qa-result', authenticateToken, async (req, res) => {
             task_id: parseInt(task_id),
             approved_by: req.user.user_id,
             approval_status: 'rejected_by_qa',
-            note: `[BUG REPORT QA] ${note}`
+            note: `[BUG REPORT QA] ${note}`,
+            file_url: file_url || null
           }
         })
       ]);
@@ -755,15 +816,43 @@ app.patch('/api/projects/:id/close', authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "Akses ditolak!" });
     }
 
+    const projectId = parseInt(req.params.id);
+    const { final_result_link } = req.body;
+
     await prisma.project.update({
-      where: { project_id: parseInt(req.params.id) },
-      data: { status: 'completed' }
+      where: { project_id: projectId },
+      data: {
+        status: 'completed',
+        final_result_link: final_result_link || null
+      }
     });
 
-    res.json({ message: "Proyek resmi ditutup dan diselesaikan!" });
+    res.json({ message: "Proyek resmi ditutup. Hasil telah dikirim ke Klien." });
   } catch (error) {
     console.error("ERROR CLOSE PROJECT:", error);
     res.status(500).json({ message: "Gagal menutup proyek." });
+  }
+});
+
+// DASHBOARD STATS: AMBIL RINGKASAN DATA
+app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Akses ditolak!" });
+    }
+
+    // Menggunakan Prisma count() sesuai permintaan untuk menghitung agregat
+    const [pending, active, testing, completed] = await prisma.$transaction([
+      prisma.project.count({ where: { status: 'pending' } }),
+      prisma.project.count({ where: { status: 'active' } }),
+      prisma.project.count({ where: { status: 'testing' } }),
+      prisma.project.count({ where: { status: 'completed' } })
+    ]);
+
+    res.json({ stats: { pending, active, testing, completed } });
+  } catch (error) {
+    console.error("ERROR GET STATS:", error);
+    res.status(500).json({ message: "Gagal memuat statistik." });
   }
 });
 

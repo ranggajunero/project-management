@@ -9,6 +9,7 @@ import ProjectSection from "./components/ProjectSection";
 import TaskSection from "./components/TaskSection";
 import UserSection from "./components/UserSection";
 import ProfileSection from "./components/ProfileSection";
+import DashboardStats from "./components/DashboardStats";
 
 export default function Dashboard({ onLogout }) {
   const [projects, setProjects] = useState([]);
@@ -21,6 +22,7 @@ export default function Dashboard({ onLogout }) {
   const [notes, setNotes] = useState({});
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [formProject, setFormProject] = useState({ project_id: null, project_name: "", description: "" });
+  const [stats, setStats] = useState(null);
 
   // State Navbar Utama untuk Mendeteksi Halaman Aktif
   const [activeTab, setActiveTab] = useState("projects");
@@ -45,6 +47,11 @@ export default function Dashboard({ onLogout }) {
 
         const workerRes = await axios.get("http://localhost:3000/api/workers", config);
         setWorkers(workerRes.data.workers);
+
+        if (role === "admin" || role === "manager") {
+          const statsRes = await axios.get("http://localhost:3000/api/dashboard/stats", config);
+          setStats(statsRes.data.stats);
+        }
 
         if (role === "admin") {
           const userRes = await axios.get("http://localhost:3000/api/users", config);
@@ -303,6 +310,11 @@ export default function Dashboard({ onLogout }) {
         {/* NOTIFIKASI ALERTS */}
         {error && <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-sm font-medium mb-6 shadow-sm">{error}</div>}
         {success && <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-medium mb-6 shadow-sm">{success}</div>}
+
+        {/* WIDGET STATISTIK (Hanya tampil di tab projects untuk Manager/Admin) */}
+        {activeTab === "projects" && (currentRole === "manager" || currentRole === "admin") && stats && (
+          <DashboardStats stats={stats} />
+        )}
 
         {/* 2. SWITCH STATEMENT: LOGIKA ROUTING HALAMAN BERDASARKAN NAV-TAB */}
         {activeTab === "projects" && (

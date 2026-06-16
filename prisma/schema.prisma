@@ -40,6 +40,9 @@ model Project {
   start_date   DateTime?
   end_date     DateTime?
   price        String?
+  created_at   DateTime        @default(now())
+  
+  final_result_link String?    @db.Text
 
   // Relasi
   client       User            @relation("ClientProjects", fields: [client_id], references: [user_id])
@@ -73,6 +76,8 @@ model Task {
   status         String     @default("todo") // todo, progress, review, revision, done
   deadline       DateTime?
   sequence_order Int        @default(0)
+  file_url       String?
+  worker_note    String?    @db.Text
 
   // Relasi
   project        Project    @relation(fields: [project_id], references: [project_id], onDelete: Cascade)
@@ -89,6 +94,7 @@ model Approval {
   approval_status String // approved, rejected
   note            String?  @db.Text
   approval_date   DateTime @default(now())
+  file_url        String?
 
   // Relasi
   task            Task     @relation(fields: [task_id], references: [task_id], onDelete: Cascade)

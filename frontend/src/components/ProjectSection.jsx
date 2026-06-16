@@ -67,10 +67,16 @@ export default function ProjectSection({ projects, formProject, setFormProject, 
   };
 
   const closeProject = async (id) => {
-    if (!window.confirm("Tutup proyek ini secara resmi dan serahkan hasil akhir ke Klien?")) return;
+    const linkResult = window.prompt("Tutup proyek ini secara resmi. Silakan masukkan Catatan/Pesan Hasil Akhir proyek untuk diserahkan ke Klien:");
+    if (linkResult === null) return; // Kalo manager nge-klik Cancel
+    if (linkResult.trim() === '') {
+      alert("Catatan/Hasil akhir wajib diisi!");
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`http://localhost:3000/api/projects/${id}/close`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(`http://localhost:3000/api/projects/${id}/close`, { final_result_link: linkResult }, { headers: { Authorization: `Bearer ${token}` } });
       window.location.reload();
     } catch (error) {
       alert("Gagal menutup proyek.");
@@ -119,11 +125,11 @@ export default function ProjectSection({ projects, formProject, setFormProject, 
                   {/* KOLOM STATUS DENGAN WARNA YANG DISEMPURNAKAN */}
                   <td className="p-4">
                     <span className={`px-2.5 py-1 text-xs font-bold uppercase rounded-md tracking-wider ${proj.status?.toLowerCase() === 'active' ? 'bg-blue-50 text-blue-700' :
-                        proj.status?.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-700' :
-                          proj.status?.toLowerCase() === 'quotation' ? 'bg-purple-50 text-purple-700' :
-                            proj.status?.toLowerCase() === 'ready_to_close' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                              proj.status?.toLowerCase() === 'completed' ? 'bg-slate-800 text-white' :
-                                'bg-slate-100 text-slate-700'
+                      proj.status?.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-700' :
+                        proj.status?.toLowerCase() === 'quotation' ? 'bg-purple-50 text-purple-700' :
+                          proj.status?.toLowerCase() === 'ready_to_close' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                            proj.status?.toLowerCase() === 'completed' ? 'bg-slate-800 text-white' :
+                              'bg-slate-100 text-slate-700'
                       }`}>
                       {/* Teks diubah agar tidak ada garis bawah (underscore) */}
                       {proj.status?.replace(/_/g, ' ')}

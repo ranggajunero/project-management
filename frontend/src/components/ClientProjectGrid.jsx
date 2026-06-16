@@ -41,16 +41,16 @@ export default function ClientProjectGrid({ projects, onRefresh }) {
             <div key={proj.project_id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col hover:shadow-md transition">
               <div className="flex justify-between items-start mb-3">
                 <h3 className="font-bold text-slate-800 text-lg">{proj.project_name}</h3>
-                <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-md tracking-wider ${
-                  proj.status === 'active' ? 'bg-blue-50 text-blue-700' : 
-                  proj.status === 'pending' ? 'bg-amber-50 text-amber-700' : 
-                  proj.status === 'quotation' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                  'bg-slate-100 text-slate-600'
-                }`}>
+                <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-md tracking-wider ${proj.status === 'active' ? 'bg-blue-50 text-blue-700' :
+                    proj.status === 'pending' ? 'bg-amber-50 text-amber-700' :
+                      proj.status === 'quotation' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                        proj.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                          'bg-slate-100 text-slate-600'
+                  }`}>
                   {proj.status === 'quotation' ? 'Penawaran' : proj.status}
                 </span>
               </div>
-              
+
               <p className="text-sm text-slate-500 mb-4 flex-1 whitespace-pre-wrap">{proj.description}</p>
 
               {/* TAMPILAN DETAIL PENAWARAN (JIKA STATUS QUOTATION ATAU ACTIVE) */}
@@ -65,14 +65,14 @@ export default function ClientProjectGrid({ projects, onRefresh }) {
               {/* AREA ACTION UNTUK CLIENT PADA STATUS QUOTATION */}
               {proj.status === 'quotation' ? (
                 <div className="flex gap-2 mb-2">
-                  <button 
+                  <button
                     disabled={loadingAction}
                     onClick={() => handleQuotationResponse(proj.project_id, 'approve')}
                     className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition shadow-sm disabled:bg-slate-300"
                   >
                     Terima Penawaran
                   </button>
-                  <button 
+                  <button
                     disabled={loadingAction}
                     onClick={() => handleQuotationResponse(proj.project_id, 'reject')}
                     className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition shadow-sm disabled:bg-slate-300"
@@ -92,6 +92,18 @@ export default function ClientProjectGrid({ projects, onRefresh }) {
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1 font-medium">{doneTasks} dari {totalTasks} task selesai</p>
                 </div>
+              ) : proj.status === 'completed' ? (
+                <div className="mb-4 p-3 bg-emerald-50 rounded-lg border border-emerald-100 space-y-2">
+                  <div className="text-emerald-700 font-bold text-xs flex items-center gap-2 justify-center border-b border-emerald-100 pb-2">
+                    ✓ Proyek Telah Selesai
+                  </div>
+                  {proj.final_result_link && (
+                    <div className="text-xs text-slate-700 font-medium whitespace-pre-wrap mt-2">
+                      <span className="font-bold text-emerald-800 block mb-1">Hasil / Catatan Akhir:</span>
+                      {proj.final_result_link}
+                    </div>
+                  )}
+                </div>
               ) : null}
 
               {proj.status === 'active' && (
@@ -108,7 +120,7 @@ export default function ClientProjectGrid({ projects, onRefresh }) {
       {selectedProject && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-100 animate-fade-in">
           <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
-            
+
             {/* Header Modal */}
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div>
